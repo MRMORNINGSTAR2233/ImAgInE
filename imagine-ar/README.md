@@ -1,92 +1,80 @@
 # ImAgInE AR
 
-A Next.js application that uses AI to generate 3D models and display them in Augmented Reality.
+A web-based augmented reality application that uses AI to generate 3D models based on user prompts.
 
 ## Features
 
-- Generates 3D models based on text prompts using an AI backend
-- Displays models in AR using WebXR
-- Built with Next.js, TypeScript, Tailwind CSS, and shadcn/ui
+- Text-to-3D model generation using Gemini AI
+- WebXR-powered AR experience
+- Real-time model placement in your environment
+- Works on compatible Android devices with Chrome
 
-## Prerequisites
+## Requirements
 
-- Node.js 18+ and npm
-- A compatible AR-capable device (Android phone with Chrome or iOS device with WebXR-compatible browser)
-- AI backend service running (expects API at http://localhost:8000 by default)
+- Node.js (v14+)
+- A modern web browser with WebXR support (Chrome on Android recommended)
+- HTTPS or localhost for AR features
+- Google Gemini API key (for AI model generation)
 
 ## Getting Started
 
-1. Clone the repository
+1. Clone this repository
 2. Install dependencies:
+   ```
+   npm install
+   ```
+3. Set up your Gemini API key:
+   ```
+   export GEMINI_API_KEY=your_api_key_here
+   ```
+   (For Windows, use `set GEMINI_API_KEY=your_api_key_here`)
 
-```bash
-npm install
-```
+4. Start the application:
+   ```
+   node start.js
+   ```
+   This will start both the frontend and backend servers.
 
-3. Create a `.env.local` file with the following content:
+5. Open your browser and navigate to `http://localhost:3000`
 
-```
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
+## Using the Application
 
-Adjust the URL to match your backend API endpoint.
+1. Enter a text prompt describing what you want to create in AR
+2. Click "Generate AR Model"
+3. Once the model is loaded, tap the "AR" button that appears
+4. Allow camera access when prompted
+5. Point your device at a flat surface
+6. Tap the screen when the placement indicator appears to place the 3D model
+7. You can place multiple instances of the model in your environment
 
-4. Start the development server:
+## Compatibility
 
-```bash
-npm run dev
-```
+- **Fully supported**: Android devices with Chrome browser
+- **Limited support**: iOS devices with Safari (iOS 13+), but with limited features
+- **Not supported**: Desktop browsers (will show 3D preview but not AR)
 
-5. Open http://localhost:3000 in your browser
+## Troubleshooting
 
-## Testing with the Sample Server
+- **Camera Permission**: Ensure you've granted camera access to the web application
+- **AR Not Working**: Make sure you're on a compatible device and browser
+- **Models Not Loading**: Check your internet connection or try a different prompt
 
-For testing purposes, a sample server is included that simulates the AI backend:
+## Development
 
-1. Start the sample server:
+- Frontend: Next.js with TypeScript
+- 3D Rendering: Three.js
+- AR: WebXR with Three.js
+- Backend: Express.js
+- AI: Google Gemini API
 
-```bash
-npm run server
-```
+### Project Structure
 
-2. The server will run on http://localhost:8000
+- `/app` - Next.js app components and pages
+- `/components` - React components including the AR scene
+- `/lib` - Utility functions and helpers
+- `/public` - Static assets and generated models
+- `server.js` - Express backend for AI model generation
 
-3. You can test with different prompts:
-   - "Create a cube"
-   - "Give me a duck"
-   - "Generate a robot"
-   - "Show me a lantern"
+## License
 
-The sample server will return pre-defined 3D models based on keywords in your prompt.
-
-## Important Notes
-
-- The application must be served over HTTPS or from localhost to enable WebXR features
-- AR functionality requires a WebXR-compatible browser on a device with AR capabilities (most modern Android phones with Chrome work well)
-- iOS devices require using browsers with WebXR support or polyfills
-
-## Usage
-
-1. Enter a text prompt describing what you want to create
-2. Click "Generate & Enter AR"
-3. When the model is ready, click "Enter AR"
-4. Allow camera permissions when prompted
-5. Point your camera at a flat surface
-6. Tap the screen to place the 3D model
-
-## Project Structure
-
-- `app/` - Next.js application files
-- `components/` - React components including:
-  - `ARScene.tsx` - Three.js and WebXR implementation
-  - `Layout.tsx` - Page layout with header
-- `public/` - Static assets
-
-## Technology Stack
-
-- Next.js
-- TypeScript
-- Three.js
-- WebXR
-- Tailwind CSS
-- shadcn/ui
+MIT

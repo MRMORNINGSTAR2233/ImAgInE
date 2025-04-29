@@ -3,9 +3,15 @@ import dynamic from 'next/dynamic';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { ARButton } from 'three/examples/jsm/webxr/ARButton.js';
+import styles from './ARScene.module.css';
 
 interface ARSceneProps {
   modelUrl: string;
+}
+
+function getProgressBarWidthClass(progress: number): string {
+  const roundedProgress = Math.floor(progress / 10) * 10;
+  return styles[`w${roundedProgress}`] || styles.w0;
 }
 
 const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
@@ -20,8 +26,16 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
   const sessionRef = useRef<XRSession | null>(null);
   const [isXRSupported, setIsXRSupported] = useState<boolean | null>(null);
   const [modelLoaded, setModelLoaded] = useState(false);
+  const [modelLoadProgress, setModelLoadProgress] = useState(0);
+  const [modelLoadError, setModelLoadError] = useState<string | null>(null);
+  const [placedObjects, setPlacedObjects] = useState<THREE.Object3D[]>([]);
 
   useEffect(() => {
+    // Reset states when model URL changes
+    setModelLoaded(false);
+    setModelLoadProgress(0);
+    setModelLoadError(null);
+    
     // Check if WebXR is supported
     if (typeof navigator !== 'undefined') {
       if (!('xr' in navigator)) {
@@ -98,9 +112,12 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
     // Handle XR session
     renderer.xr.addEventListener('sessionstart', () => {
       sessionRef.current = renderer.xr.getSession();
+      hitTestSourceRequiredRef.current = true;
+      console.log("AR session started");
     });
 
     renderer.xr.addEventListener('sessionend', () => {
+      console.log("AR session ended");
       sessionRef.current = null;
       hitTestSourceRef.current = null;
       hitTestSourceRequiredRef.current = false;
@@ -113,12 +130,41 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
 
     // Load 3D model
     const loadModel = (url: string) => {
+      // Clear any previous model
+      if (modelRef.current) {
+        scene.remove(modelRef.current);
+        modelRef.current = null;
+      }
+      
+      setModelLoaded(false);
+      setModelLoadProgress(0);
+      setModelLoadError(null);
+      
       const loader = new GLTFLoader();
       loader.load(
         url,
         (gltf) => {
           const model = gltf.scene;
+          
+          // Apply common model fixes and enhancements
           model.scale.set(0.5, 0.5, 0.5); // Adjust scale as needed
+          model.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+              // Ensure proper material settings for AR
+              const mesh = child as THREE.Mesh;
+              if (mesh.material) {
+                // Handle material array
+                if (Array.isArray(mesh.material)) {
+                  mesh.material.forEach(mat => {
+                    if (mat.transparent) mat.opacity = 0.8;
+                  });
+                } else {
+                  // Single material
+                  if (mesh.material.transparent) mesh.material.opacity = 0.8;
+                }
+              }
+            }
+          });
           
           // For non-AR fallback view, make the model visible directly
           if (!isXRSupported) {
@@ -131,13 +177,19 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
           scene.add(model);
           modelRef.current = model;
           setModelLoaded(true);
-          console.log('Model loaded successfully');
+          setModelLoadProgress(100);
+          console.log('Model loaded successfully:', url);
         },
         (progress) => {
-          console.log(`Loading model: ${(progress.loaded / progress.total) * 100}%`);
+          if (progress.lengthComputable) {
+            const progressPercent = Math.round((progress.loaded / progress.total) * 100);
+            setModelLoadProgress(progressPercent);
+            console.log(`Loading model: ${progressPercent}%`);
+          }
         },
         (error) => {
           console.error('Error loading model:', error);
+          setModelLoadError(`Failed to load 3D model: ${error instanceof Error ? error.message : String(error)}`);
         }
       );
     };
@@ -151,6 +203,36 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
         model.position.setFromMatrixPosition(reticleRef.current.matrix);
         model.visible = true;
         scene.add(model);
+        setPlacedObjects(prev => [...prev, model]);
+        
+        // Add a small animation to indicate successful placement
+        const origScale = { ...model.scale };
+        model.scale.set(origScale.x * 1.2, origScale.y * 1.2, origScale.z * 1.2);
+        
+        setTimeout(() => {
+          // Animate back to original scale
+          const duration = 300; // ms
+          const startTime = Date.now();
+          
+          function animateScale() {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            const newScale = {
+              x: origScale.x * (1.2 - (0.2 * progress)),
+              y: origScale.y * (1.2 - (0.2 * progress)),
+              z: origScale.z * (1.2 - (0.2 * progress))
+            };
+            
+            model.scale.set(newScale.x, newScale.y, newScale.z);
+            
+            if (progress < 1) {
+              requestAnimationFrame(animateScale);
+            }
+          }
+          
+          animateScale();
+        }, 100);
       }
     }
 
@@ -166,10 +248,16 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
 
         if (referenceSpace && session) {
           if (hitTestSourceRequiredRef.current) {
-            session.requestReferenceSpace('viewer').then((referenceSpace) => {
-              session.requestHitTestSource({ space: referenceSpace })
+            // Create a separate variable to satisfy TypeScript
+            const xrSession: XRSession = session;
+            xrSession.requestReferenceSpace('viewer').then((viewerSpace) => {
+              // Use non-null assertion to tell TypeScript the method exists
+              xrSession.requestHitTestSource!({ space: viewerSpace })
                 .then((source) => {
                   hitTestSourceRef.current = source;
+                })
+                .catch(err => {
+                  console.error("Error requesting hit test source:", err);
                 });
             });
             hitTestSourceRequiredRef.current = false;
@@ -251,27 +339,67 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
     return (
       <div className="w-full">
         <div ref={containerRef} className="ar-container w-full h-64 bg-slate-100 rounded-md relative" />
-        <div className="mt-2 p-4 bg-amber-50 border border-amber-200 rounded-md text-amber-700">
-          <h3 className="font-medium">WebXR Not Supported</h3>
-          <p className="text-sm mt-1">
-            Your device or browser doesn't support AR. For the best experience:
-          </p>
-          <ul className="text-sm list-disc pl-5 mt-1">
-            <li>Use an Android device with Chrome browser</li>
-            <li>Access this site over HTTPS or localhost</li>
-            <li>Ensure WebXR is enabled in your browser</li>
-          </ul>
-          {modelLoaded && (
-            <p className="text-sm mt-2">
-              A non-AR 3D preview is shown above.
+        {modelLoadError ? (
+          <div className="mt-2 p-4 bg-red-50 border border-red-200 rounded-md text-red-700">
+            <h3 className="font-medium">Error Loading Model</h3>
+            <p className="text-sm mt-1">{modelLoadError}</p>
+          </div>
+        ) : !modelLoaded ? (
+          <div className="mt-2 p-4 bg-blue-50 border border-blue-200 rounded-md">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-medium text-blue-700">Loading 3D Model...</span>
+              <span className="text-xs text-blue-500">{modelLoadProgress}%</span>
+            </div>
+            <div className="w-full bg-blue-200 rounded-full h-2">
+              <div 
+                className={`bg-blue-600 h-2 rounded-full transition-all ${getProgressBarWidthClass(modelLoadProgress)}`}
+              ></div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-2 p-4 bg-amber-50 border border-amber-200 rounded-md text-amber-700">
+            <h3 className="font-medium">WebXR Not Supported</h3>
+            <p className="text-sm mt-1">
+              Your device or browser doesn't support AR. Showing a non-AR 3D preview instead.
             </p>
-          )}
-        </div>
+            <ul className="text-sm list-disc pl-5 mt-1">
+              <li>Use an Android device with Chrome browser</li>
+              <li>Access this site over HTTPS or localhost</li>
+              <li>Ensure WebXR is enabled in your browser</li>
+            </ul>
+          </div>
+        )}
       </div>
     );
   }
 
-  return <div ref={containerRef} className="ar-container w-full h-screen absolute top-0 left-0 z-10" />;
+  return (
+    <div className="relative">
+      <div ref={containerRef} className={`ar-container ${styles.container}`} />
+      
+      {modelLoadError ? (
+        <div className="absolute bottom-4 left-4 right-4 p-4 bg-red-50 border border-red-200 rounded-md text-red-700">
+          <p className="text-sm">{modelLoadError}</p>
+        </div>
+      ) : !modelLoaded ? (
+        <div className="absolute bottom-4 left-4 right-4 p-4 bg-white/80 backdrop-blur-sm border border-slate-200 rounded-md">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-sm font-medium text-slate-700">Loading 3D Model...</span>
+            <span className="text-xs text-slate-500">{modelLoadProgress}%</span>
+          </div>
+          <div className="w-full bg-slate-200 rounded-full h-2">
+            <div 
+              className={`${styles.progressBar} ${getProgressBarWidthClass(modelLoadProgress)}`}
+            ></div>
+          </div>
+        </div>
+      ) : placedObjects.length > 0 ? (
+        <div className="absolute top-4 right-4 p-2 bg-white/70 backdrop-blur-sm rounded-md text-xs text-slate-700">
+          {placedObjects.length} {placedObjects.length === 1 ? 'model' : 'models'} placed
+        </div>
+      ) : null}
+    </div>
+  );
 };
 
 export default dynamic(() => Promise.resolve(ARScene), { ssr: false }); 
