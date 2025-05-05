@@ -34,8 +34,10 @@ export default function Home() {
 
     setLoading(true);
     setError(null);
+    setModelUrl(null); // Reset model URL when generating new model
     
     try {
+      console.log('Sending request to generate model...');
       const response = await fetch('/api/generate', {
         method: "POST",
         headers: {
@@ -45,10 +47,13 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `API error: ${response.status}`);
       }
 
       const data = await response.json();
+      console.log('Received model data:', data);
+      
       if (data.url) {
         setModelUrl(data.url);
         setModelDescription(data.description || null);
@@ -60,6 +65,7 @@ export default function Home() {
     } catch (err) {
       console.error("Error generating AR model:", err);
       setError(`Failed to generate AR model: ${err instanceof Error ? err.message : "Unknown error"}`);
+      setModelUrl(null);
     } finally {
       setLoading(false);
     }

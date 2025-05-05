@@ -5,6 +5,14 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { ARButton } from 'three/examples/jsm/webxr/ARButton.js';
 import styles from './ARScene.module.css';
 
+// Fallback models if loading fails
+const fallbackModels = {
+  'cube': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF/Box.gltf',
+  'duck': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF/Duck.gltf',
+  'robot': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/BrainStem/glTF/BrainStem.gltf',
+  'lantern': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Lantern/glTF/Lantern.gltf',
+};
+
 interface ARSceneProps {
   modelUrl: string;
 }
@@ -140,10 +148,25 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
       setModelLoadProgress(0);
       setModelLoadError(null);
       
+      console.log('Starting to load model from URL:', url);
+      
       const loader = new GLTFLoader();
+      
+      // Add timeout for model loading
+      const timeoutId = setTimeout(() => {
+        console.error('Model loading timed out');
+        setModelLoadError('Model loading timed out. Please try again.');
+        if (url !== fallbackModels.cube) {
+          console.log('Attempting to load fallback model...');
+          loadModel(fallbackModels.cube);
+        }
+      }, 30000); // 30 second timeout
+      
       loader.load(
         url,
         (gltf) => {
+          clearTimeout(timeoutId); // Clear timeout on successful load
+          console.log('GLTF loaded successfully:', gltf);
           const model = gltf.scene;
           
           // Apply common model fixes and enhancements
@@ -178,7 +201,7 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
           modelRef.current = model;
           setModelLoaded(true);
           setModelLoadProgress(100);
-          console.log('Model loaded successfully:', url);
+          console.log('Model loaded and added to scene successfully');
         },
         (progress) => {
           if (progress.lengthComputable) {
@@ -188,13 +211,26 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
           }
         },
         (error) => {
+          clearTimeout(timeoutId); // Clear timeout on error
           console.error('Error loading model:', error);
           setModelLoadError(`Failed to load 3D model: ${error instanceof Error ? error.message : String(error)}`);
+          
+          // Try to load fallback model if main model fails
+          if (url !== fallbackModels.cube) {
+            console.log('Attempting to load fallback model...');
+            loadModel(fallbackModels.cube);
+          }
         }
       );
     };
 
-    loadModel(modelUrl);
+    if (modelUrl) {
+      console.log('Loading model with URL:', modelUrl);
+      // Add a small delay before loading to ensure scene is ready
+      setTimeout(() => {
+        loadModel(modelUrl);
+      }, 100);
+    }
 
     // Handle placement of model
     function onSelect() {

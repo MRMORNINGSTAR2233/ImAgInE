@@ -15,8 +15,15 @@ const fallbackModels = {
 // Generate 3D model using Gemini AI
 async function generateModelWithAI(prompt: string) {
   try {
+    if (!process.env.GEMINI_API_KEY) {
+      console.error('GEMINI_API_KEY is not set');
+      throw new Error('API key not configured');
+    }
+
     // Use Gemini 1.5 Flash model instead of gemini-pro
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    
+    console.log('Sending prompt to Gemini AI:', prompt);
     
     // Send prompt to Gemini AI for 3D model generation guidance
     const result = await model.generateContent(`Create a detailed 3D model description for: ${prompt}. 
@@ -43,8 +50,11 @@ async function generateModelWithAI(prompt: string) {
       modelType = 'lantern';
     }
     
+    const selectedModel = fallbackModels[modelType as keyof typeof fallbackModels] || fallbackModels.cube;
+    console.log('Selected model URL:', selectedModel);
+    
     return {
-      modelUrl: fallbackModels[modelType as keyof typeof fallbackModels] || fallbackModels.cube,
+      modelUrl: selectedModel,
       modelDescription: modelDescription,
       aiGenerated: true,
       modelType
@@ -66,6 +76,7 @@ export async function POST(request: Request) {
     const { prompt } = await request.json();
     
     if (!prompt) {
+      console.error('No prompt provided');
       return NextResponse.json(
         { error: 'Prompt is required' },
         { status: 400 }
@@ -74,6 +85,11 @@ export async function POST(request: Request) {
     
     console.log(`Generating 3D model for prompt: "${prompt}"`);
     const modelData = await generateModelWithAI(prompt);
+    
+    if (!modelData.modelUrl) {
+      console.error('No model URL generated');
+      throw new Error('Failed to generate model URL');
+    }
     
     return NextResponse.json({ 
       url: modelData.modelUrl,
