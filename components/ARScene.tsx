@@ -3,7 +3,6 @@ import dynamic from 'next/dynamic';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { ARButton } from 'three/examples/jsm/webxr/ARButton.js';
-import styles from './ARScene.module.css';
 
 // Update fallback models with more diverse options
 const fallbackModels = {
@@ -20,11 +19,6 @@ const fallbackModels = {
 
 interface ARSceneProps {
   modelUrl: string;
-}
-
-function getProgressBarWidthClass(progress: number): string {
-  const roundedProgress = Math.floor(progress / 10) * 10;
-  return styles[`w${roundedProgress}`] || styles.w0;
 }
 
 const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
@@ -134,7 +128,7 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
         arButton.style.bottom = '20px';
         arButton.style.left = '50%';
         arButton.style.transform = 'translateX(-50%)';
-        arButton.style.zIndex = '1000';
+        arButton.style.zIndex = '2000';
         arButton.style.padding = '12px 24px';
         arButton.style.borderRadius = '8px';
         arButton.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
@@ -451,7 +445,8 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
             </div>
             <div className="w-full bg-blue-200 rounded-full h-2">
               <div 
-                className={`bg-blue-600 h-2 rounded-full transition-all ${getProgressBarWidthClass(modelLoadProgress)}`}
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${modelLoadProgress}%` }}
               ></div>
             </div>
           </div>
@@ -473,26 +468,26 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
   }
 
   return (
-    <div className="relative">
+    <div className="fixed inset-0" style={{ background: 'transparent' }}>
       <div 
         ref={containerRef} 
-        className={`ar-container ${styles.container}`} 
+        className="w-full h-full"
         style={{ 
-          position: 'fixed',
+          position: 'absolute',
           top: 0,
           left: 0,
-          width: '100vw',
-          height: '100vh',
-          zIndex: 0
+          right: 0,
+          bottom: 0,
+          background: 'transparent'
         }} 
       />
       
       {modelLoadError ? (
-        <div className="fixed bottom-20 left-4 right-4 p-4 bg-black/70 backdrop-blur-sm rounded-lg text-white text-sm">
+        <div className="fixed bottom-24 left-4 right-4 mx-auto max-w-md p-3 bg-black/70 backdrop-blur-sm rounded-lg text-white text-sm">
           {modelLoadError}
         </div>
       ) : !modelLoaded ? (
-        <div className="fixed bottom-20 left-4 right-4 p-4 bg-black/70 backdrop-blur-sm rounded-lg">
+        <div className="fixed bottom-24 left-4 right-4 mx-auto max-w-md p-3 bg-black/70 backdrop-blur-sm rounded-lg">
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm text-white">Loading Model...</span>
             <span className="text-xs text-white/80">{modelLoadProgress}%</span>
@@ -512,5 +507,18 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
     </div>
   );
 };
+
+// Add some CSS to ensure proper rendering
+const styles = {
+  container: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    background: 'transparent',
+    zIndex: 1
+  }
+} as const;
 
 export default dynamic(() => Promise.resolve(ARScene), { ssr: false }); 
