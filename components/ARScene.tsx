@@ -211,37 +211,83 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
       
       console.log('Starting to load model from URL:', url);
       
+      // Check if URL is valid
+      if (!url || url === 'undefined') {
+        console.error('Invalid model URL:', url);
+        setModelLoadError('Invalid model URL. Please try again.');
+        loadModel(fallbackModels.default);
+        return;
+      }
+      
       const loader = new GLTFLoader();
       
       // Add timeout for model loading
       const timeoutId = setTimeout(() => {
         console.error('Model loading timed out');
         setModelLoadError('Model loading timed out. Please try again.');
-        if (url !== fallbackModels.cube) {
+        if (url !== fallbackModels.default) {
           console.log('Attempting to load fallback model...');
-          loadModel(fallbackModels.cube);
+          loadModel(fallbackModels.default);
         }
       }, 30000);
       
+      // Add load manager for better error handling
+      const manager = new THREE.LoadingManager();
+      manager.onError = (url) => {
+        console.error('Error loading resource:', url);
+        clearTimeout(timeoutId);
+        setModelLoadError(`Failed to load resource: ${url}`);
+        if (url !== fallbackModels.default) {
+          loadModel(fallbackModels.default);
+        }
+      };
+      
+      loader.setPath(url.substring(0, url.lastIndexOf('/') + 1));
+      loader.manager = manager;
+      
       loader.load(
-        url,
+        url.split('/').pop() || url, // Get filename only if path was set
         (gltf) => {
           clearTimeout(timeoutId);
           console.log('GLTF loaded successfully:', gltf);
           const model = gltf.scene;
           
-          // Enhanced model setup
-          model.scale.set(0.3, 0.3, 0.3); // Smaller scale for better visibility
+          // Scale based on model type
+          const getAppropriateScale = () => {
+            if (url.includes('Dragon')) return 0.05;
+            if (url.includes('Lantern')) return 0.5;
+            if (url.includes('Duck')) return 0.2;
+            if (url.includes('Truck')) return 0.2;
+            if (url.includes('Soldier')) return 0.1;
+            if (url.includes('Fox')) return 0.05;
+            return 0.2; // Default scale
+          };
+          
+          const scale = getAppropriateScale();
+          model.scale.set(scale, scale, scale);
+          
+          // Center model
+          const box = new THREE.Box3().setFromObject(model);
+          const center = box.getCenter(new THREE.Vector3());
+          model.position.sub(center); // Center the model at origin
+          
+          // Enhance materials
           model.traverse((child) => {
             if ((child as THREE.Mesh).isMesh) {
               const mesh = child as THREE.Mesh;
+              
+              // Add shadows
+              mesh.castShadow = true;
+              mesh.receiveShadow = true;
+              
               if (mesh.material) {
                 // Enhanced material settings
                 if (Array.isArray(mesh.material)) {
                   mesh.material.forEach(mat => {
                     if (mat instanceof THREE.MeshStandardMaterial) {
-                      mat.roughness = 0.5;
-                      mat.metalness = 0.5;
+                      mat.roughness = 0.7;
+                      mat.metalness = 0.3;
+                      mat.envMapIntensity = 1.0;
                     }
                     if (mat.transparent) {
                       mat.opacity = 1.0;
@@ -250,8 +296,9 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
                   });
                 } else {
                   if (mesh.material instanceof THREE.MeshStandardMaterial) {
-                    mesh.material.roughness = 0.5;
-                    mesh.material.metalness = 0.5;
+                    mesh.material.roughness = 0.7;
+                    mesh.material.metalness = 0.3;
+                    mesh.material.envMapIntensity = 1.0;
                   }
                   if (mesh.material.transparent) {
                     mesh.material.opacity = 1.0;
@@ -287,9 +334,9 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
           clearTimeout(timeoutId);
           console.error('Error loading model:', error);
           setModelLoadError(`Failed to load 3D model: ${error instanceof Error ? error.message : String(error)}`);
-          if (url !== fallbackModels.cube) {
+          if (url !== fallbackModels.default) {
             console.log('Attempting to load fallback model...');
-            loadModel(fallbackModels.cube);
+            loadModel(fallbackModels.default);
           }
         }
       );
@@ -306,11 +353,50 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
     // Handle placement of model
     function onSelect() {
       if (reticleRef.current?.visible && modelRef.current) {
+        // Create a clone of the model
         const model = modelRef.current.clone();
+        
+        // Position at reticle
         model.position.setFromMatrixPosition(reticleRef.current.matrix);
+        
+        // Make sure it's visible
         model.visible = true;
+        
+        // Add a small visual feedback animation when placing
+        const originalScale = model.scale.clone();
+        model.scale.multiplyScalar(1.2); // Slightly larger
+        
+        // Animate back to normal size
+        const duration = 300; // ms
+        const startTime = performance.now();
+        
+        function animateScale(time: number) {
+          const elapsed = time - startTime;
+          if (elapsed < duration) {
+            const progress = elapsed / duration;
+            const scale = 1.2 - (0.2 * progress);
+            model.scale.copy(originalScale).multiplyScalar(scale);
+            requestAnimationFrame(animateScale);
+          } else {
+            model.scale.copy(originalScale);
+          }
+        }
+        
+        requestAnimationFrame(animateScale);
+        
+        // Add to scene
         scene.add(model);
         setPlacedObjects(prev => [...prev, model]);
+        
+        // Optional: Add a simple animation to the placed model
+        const angle = Math.random() * Math.PI * 2; // Random rotation
+        const animate = () => {
+          model.rotation.y += 0.005;
+          requestAnimationFrame(animate);
+        };
+        
+        // Uncomment to add rotation animation
+        // animate();
       }
     }
 

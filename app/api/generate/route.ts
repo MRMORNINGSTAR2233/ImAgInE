@@ -4,7 +4,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
-// Fallback models if AI generation fails
+// Fallback models if AI generation fails - using proven working URLs
 const fallbackModels = {
   'cube': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF/Box.gltf',
   'fish': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF/Duck.gltf', // Using duck as temporary fish
@@ -17,16 +17,27 @@ const fallbackModels = {
   'default': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF/Box.gltf'
 };
 
+// Ensure all URLs are valid and working
+async function validateModelUrl(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(url, { method: 'HEAD' });
+    return response.ok;
+  } catch (error) {
+    console.error('Error validating model URL:', error);
+    return false;
+  }
+}
+
 // Categories and their related keywords
 const modelCategories = {
-  fish: ['fish', 'swimming', 'aquatic', 'marine', 'sea', 'ocean', 'water'],
-  dragon: ['dragon', 'mythical', 'fantasy', 'flying', 'creature', 'magical', 'wings'],
-  robot: ['robot', 'mechanical', 'machine', 'android', 'tech', 'futuristic', 'artificial'],
-  lantern: ['lantern', 'light', 'lamp', 'illumination', 'glow', 'lighting'],
-  animal: ['animal', 'creature', 'beast', 'wildlife', 'nature', 'living'],
-  human: ['human', 'person', 'man', 'woman', 'figure', 'character', 'humanoid'],
-  vehicle: ['vehicle', 'car', 'truck', 'transport', 'automobile', 'transportation'],
-  cube: ['cube', 'box', 'square', 'geometric', 'simple']
+  fish: ['fish', 'swimming', 'aquatic', 'marine', 'sea', 'ocean', 'water', 'whale', 'shark'],
+  dragon: ['dragon', 'mythical', 'fantasy', 'flying', 'creature', 'magical', 'wings', 'fire', 'red'],
+  robot: ['robot', 'mechanical', 'machine', 'android', 'tech', 'futuristic', 'artificial', 'metallic'],
+  lantern: ['lantern', 'light', 'lamp', 'illumination', 'glow', 'lighting', 'candle'],
+  animal: ['animal', 'creature', 'beast', 'wildlife', 'nature', 'living', 'fur', 'fox', 'dog', 'cat'],
+  human: ['human', 'person', 'man', 'woman', 'figure', 'character', 'humanoid', 'soldier', 'people'],
+  vehicle: ['vehicle', 'car', 'truck', 'transport', 'automobile', 'transportation', 'wheels'],
+  cube: ['cube', 'box', 'square', 'geometric', 'simple', 'basic']
 };
 
 // Generate 3D model using Gemini AI
@@ -42,38 +53,62 @@ async function generateModelWithAI(prompt: string) {
     
     console.log('Sending prompt to Gemini AI:', prompt);
     
-    // Get AI description
-    const result = await model.generateContent(`Analyze this description and extract key characteristics for a 3D model: "${prompt}". 
-      Consider elements like object type, shape, color, size, and special features. 
-      Format response as JSON with these fields: mainCategory (primary object type), keywords (list of descriptive terms).`);
+    // Get AI description with retry
+    const getAIResponse = async (retries = 1) => {
+      try {
+        const result = await model.generateContent(`Analyze this description and extract key characteristics for a 3D model: "${prompt}". 
+          Consider elements like object type, shape, color, size, and special features. 
+          Format response as JSON with these fields: mainCategory (primary object type), keywords (list of descriptive terms).`);
+        
+        const response = await result.response;
+        return response.text();
+      } catch (error) {
+        console.error(`AI request failed (attempt ${retries}/3):`, error);
+        if (retries < 3) {
+          // Wait 1 second and retry
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          return getAIResponse(retries + 1);
+        }
+        throw error;
+      }
+    };
     
-    const response = await result.response;
-    const modelDescription = response.text();
-    
+    const modelDescription = await getAIResponse();
     console.log("AI Model Description:", modelDescription);
     
     // Parse the AI response to get keywords
     let aiResponse;
     try {
-      aiResponse = JSON.parse(modelDescription);
+      // Extract JSON if it's wrapped in backticks
+      const jsonMatch = modelDescription.match(/```json\s*([\s\S]*?)\s*```/) || 
+                        modelDescription.match(/```\s*([\s\S]*?)\s*```/) ||
+                        modelDescription.match(/\{[\s\S]*\}/);
+                        
+      const jsonText = jsonMatch ? jsonMatch[1] || jsonMatch[0] : modelDescription;
+      aiResponse = JSON.parse(jsonText);
     } catch (e) {
-      console.log('Failed to parse AI response as JSON, using text analysis');
-      aiResponse = { mainCategory: '', keywords: prompt.toLowerCase().split(' ') };
+      console.log('Failed to parse AI response as JSON, using text analysis', e);
+      // Extract keywords manually from the text
+      const words = prompt.toLowerCase().split(/\s+/);
+      aiResponse = { 
+        mainCategory: '', 
+        keywords: words
+      };
     }
 
     // Combine prompt keywords and AI-generated keywords
     const allKeywords = [
-      ...prompt.toLowerCase().split(' '),
+      ...prompt.toLowerCase().split(/\s+/),
       ...(aiResponse.keywords || []),
       aiResponse.mainCategory
-    ].filter(Boolean);
+    ].filter(Boolean).map(k => k.toLowerCase());
 
     console.log('Analyzing keywords:', allKeywords);
 
     // Score each category based on keyword matches
     const categoryScores = Object.entries(modelCategories).map(([category, keywords]) => {
       const score = allKeywords.reduce((acc, keyword) => {
-        return acc + (keywords.includes(keyword.toLowerCase()) ? 1 : 0);
+        return acc + (keywords.some(k => keyword.includes(k)) ? 1 : 0);
       }, 0);
       return { category, score };
     });
@@ -84,8 +119,23 @@ async function generateModelWithAI(prompt: string) {
 
     console.log('Selected model type:', modelType);
     
+    // Get the model URL
+    const modelUrl = fallbackModels[modelType as keyof typeof fallbackModels] || fallbackModels.default;
+    
+    // Validate the URL works
+    const isValid = await validateModelUrl(modelUrl);
+    if (!isValid) {
+      console.warn(`Model URL validation failed: ${modelUrl}, falling back to default`);
+      return {
+        modelUrl: fallbackModels.default,
+        modelDescription: modelDescription,
+        aiGenerated: true,
+        modelType: 'default'
+      };
+    }
+    
     return {
-      modelUrl: fallbackModels[modelType as keyof typeof fallbackModels] || fallbackModels.default,
+      modelUrl: modelUrl,
       modelDescription: modelDescription,
       aiGenerated: true,
       modelType
