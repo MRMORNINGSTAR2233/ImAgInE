@@ -78,24 +78,37 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: true,
+      powerPreference: 'high-performance',
     });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
     containerRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // Light setup
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+    // Enhanced lighting setup
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
     scene.add(ambientLight);
     
     const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
     directionalLight.position.set(1, 1, 1);
+    directionalLight.castShadow = true;
     scene.add(directionalLight);
 
-    // Create reticle for AR placement
+    // Add hemisphere light for better ambient lighting
+    const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+    scene.add(hemisphereLight);
+
+    // Create reticle for AR placement with improved visibility
     const reticleGeometry = new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2);
-    const reticleMaterial = new THREE.MeshBasicMaterial();
+    const reticleMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.8,
+    });
     const reticle = new THREE.Mesh(reticleGeometry, reticleMaterial);
     reticle.matrixAutoUpdate = false;
     reticle.visible = false;
@@ -110,6 +123,12 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
           optionalFeatures: ['dom-overlay'],
           domOverlay: { root: document.body },
         });
+        // Style the AR button
+        arButton.style.position = 'absolute';
+        arButton.style.bottom = '20px';
+        arButton.style.left = '50%';
+        arButton.style.transform = 'translateX(-50%)';
+        arButton.style.zIndex = '1000';
         document.body.appendChild(arButton);
       } catch (error) {
         console.error("Error creating AR button:", error);
@@ -136,7 +155,7 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
     controller.addEventListener('select', onSelect);
     scene.add(controller);
 
-    // Load 3D model
+    // Load 3D model with improved quality
     const loadModel = (url: string) => {
       // Clear any previous model
       if (modelRef.current) {
@@ -160,36 +179,48 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
           console.log('Attempting to load fallback model...');
           loadModel(fallbackModels.cube);
         }
-      }, 30000); // 30 second timeout
+      }, 30000);
       
       loader.load(
         url,
         (gltf) => {
-          clearTimeout(timeoutId); // Clear timeout on successful load
+          clearTimeout(timeoutId);
           console.log('GLTF loaded successfully:', gltf);
           const model = gltf.scene;
           
-          // Apply common model fixes and enhancements
-          model.scale.set(0.5, 0.5, 0.5); // Adjust scale as needed
+          // Enhanced model setup
+          model.scale.set(0.3, 0.3, 0.3); // Smaller scale for better visibility
           model.traverse((child) => {
             if ((child as THREE.Mesh).isMesh) {
-              // Ensure proper material settings for AR
               const mesh = child as THREE.Mesh;
               if (mesh.material) {
-                // Handle material array
+                // Enhanced material settings
                 if (Array.isArray(mesh.material)) {
                   mesh.material.forEach(mat => {
-                    if (mat.transparent) mat.opacity = 0.8;
+                    if (mat instanceof THREE.MeshStandardMaterial) {
+                      mat.roughness = 0.5;
+                      mat.metalness = 0.5;
+                    }
+                    if (mat.transparent) {
+                      mat.opacity = 1.0;
+                      mat.transparent = true;
+                    }
                   });
                 } else {
-                  // Single material
-                  if (mesh.material.transparent) mesh.material.opacity = 0.8;
+                  if (mesh.material instanceof THREE.MeshStandardMaterial) {
+                    mesh.material.roughness = 0.5;
+                    mesh.material.metalness = 0.5;
+                  }
+                  if (mesh.material.transparent) {
+                    mesh.material.opacity = 1.0;
+                    mesh.material.transparent = true;
+                  }
                 }
               }
             }
           });
           
-          // For non-AR fallback view, make the model visible directly
+          // For non-AR fallback view
           if (!isXRSupported) {
             model.position.set(0, 0, -2);
             model.visible = true;
@@ -211,11 +242,9 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
           }
         },
         (error) => {
-          clearTimeout(timeoutId); // Clear timeout on error
+          clearTimeout(timeoutId);
           console.error('Error loading model:', error);
           setModelLoadError(`Failed to load 3D model: ${error instanceof Error ? error.message : String(error)}`);
-          
-          // Try to load fallback model if main model fails
           if (url !== fallbackModels.cube) {
             console.log('Attempting to load fallback model...');
             loadModel(fallbackModels.cube);
@@ -411,7 +440,7 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
 
   return (
     <div className="relative">
-      <div ref={containerRef} className={`ar-container ${styles.container}`} />
+      <div ref={containerRef} className={`ar-container ${styles.container}`} style={{ position: 'relative', width: '100%', height: '100vh' }} />
       
       {modelLoadError ? (
         <div className="absolute bottom-4 left-4 right-4 p-4 bg-red-50 border border-red-200 rounded-md text-red-700">
