@@ -3,6 +3,7 @@ import dynamic from 'next/dynamic';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { ARButton } from 'three/examples/jsm/webxr/ARButton.js';
+import styles from './ARScene.module.css';
 
 // Update fallback models with more diverse options
 const fallbackModels = {
@@ -119,51 +120,41 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
     // Add AR button to the container only if WebXR is supported
     if (isXRSupported) {
       try {
-        // Create custom AR button handler
-        const handleARButtonClick = () => {
-          if (sessionRef.current) {
-            // Stop the session
-            sessionRef.current.end();
-          } else {
-            // Start a new session
-            renderer.xr.setReferenceSpaceType('local');
-            renderer.xr.setSession(null);
-            
-            navigator.xr?.requestSession('immersive-ar', {
-              requiredFeatures: ['hit-test'],
-              optionalFeatures: ['dom-overlay'],
-              domOverlay: { root: document.body }
-            }).then((session) => {
-              renderer.xr.setSession(session);
-              if (onArSessionChange) {
-                onArSessionChange(true);
-                setIsFullscreen(true);
-              }
-            }).catch(error => {
-              console.error('Error starting AR session:', error);
-            });
-          }
-        };
+        // Use the built-in ARButton that's known to work reliably
+        const arButton = ARButton.createButton(renderer, {
+          requiredFeatures: ['hit-test'],
+          optionalFeatures: ['dom-overlay'],
+          domOverlay: { root: document.body }
+        });
 
-        // Create a custom button instead of using ARButton.createButton
-        const customARButton = document.createElement('button');
-        customARButton.textContent = 'Start AR';
-        customARButton.style.position = 'fixed';
-        customARButton.style.bottom = '20px';
-        customARButton.style.left = '50%';
-        customARButton.style.transform = 'translateX(-50%)';
-        customARButton.style.zIndex = '2000';
-        customARButton.style.padding = '12px 24px';
-        customARButton.style.borderRadius = '8px';
-        customARButton.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        customARButton.style.color = 'white';
-        customARButton.style.border = 'none';
-        customARButton.style.fontFamily = 'system-ui, -apple-system, sans-serif';
-        customARButton.style.fontSize = '14px';
-        customARButton.style.cursor = 'pointer';
+        // Style the AR button
+        arButton.style.position = 'fixed';
+        arButton.style.bottom = '20px';
+        arButton.style.left = '50%';
+        arButton.style.transform = 'translateX(-50%)';
+        arButton.style.zIndex = '2000';
+        arButton.style.padding = '12px 24px';
+        arButton.style.borderRadius = '8px';
+        arButton.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        arButton.style.color = 'white';
+        arButton.style.border = 'none';
+        arButton.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+        arButton.style.fontSize = '14px';
+        arButton.style.cursor = 'pointer';
         
-        customARButton.addEventListener('click', handleARButtonClick);
-        document.body.appendChild(customARButton);
+        // Simplify button text
+        const observer = new MutationObserver(() => {
+          if (arButton.textContent?.includes('START')) {
+            arButton.textContent = 'Start AR';
+          } else if (arButton.textContent?.includes('STOP')) {
+            arButton.textContent = 'Stop AR';
+          }
+        });
+        
+        observer.observe(arButton, { childList: true, characterData: true, subtree: true });
+        
+        document.body.appendChild(arButton);
+        console.log('AR button created and added to document');
       } catch (error) {
         console.error("Error creating AR button:", error);
         setIsXRSupported(false);
@@ -172,24 +163,35 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
 
     // Handle XR session
     renderer.xr.addEventListener('sessionstart', () => {
+      console.log("AR session started");
       sessionRef.current = renderer.xr.getSession();
       hitTestSourceRequiredRef.current = true;
-      console.log("AR session started");
+      
       if (onArSessionChange) {
         onArSessionChange(true);
         setIsFullscreen(true);
+      }
+      
+      // Ensure model visibility in AR mode
+      if (modelRef.current) {
+        modelRef.current.visible = false; // Hide original model
       }
     });
 
     renderer.xr.addEventListener('sessionend', () => {
       console.log("AR session ended");
-      sessionRef.current = null;
-      hitTestSourceRef.current = null;
-      hitTestSourceRequiredRef.current = false;
       if (onArSessionChange) {
         onArSessionChange(false);
         setIsFullscreen(false);
       }
+      
+      sessionRef.current = null;
+      hitTestSourceRef.current = null;
+      hitTestSourceRequiredRef.current = false;
+      
+      // Optional: clean up placed objects when session ends
+      // placedObjects.forEach(obj => scene.remove(obj));
+      // setPlacedObjects([]);
     });
 
     // Handle controller for selecting placement
@@ -231,115 +233,82 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
         }
       }, 30000);
       
-      // Add load manager for better error handling
-      const manager = new THREE.LoadingManager();
-      manager.onError = (url) => {
-        console.error('Error loading resource:', url);
+      // Don't use setPath as it can cause issues with some URLs
+      try {
+        loader.load(
+          url,
+          (gltf) => {
+            clearTimeout(timeoutId);
+            console.log('GLTF loaded successfully:', gltf);
+            const model = gltf.scene;
+            
+            // Scale based on model type
+            const getAppropriateScale = () => {
+              if (url.includes('Dragon')) return 0.05;
+              if (url.includes('Lantern')) return 0.5;
+              if (url.includes('Duck')) return 0.2;
+              if (url.includes('Truck')) return 0.2;
+              if (url.includes('Soldier')) return 0.1;
+              if (url.includes('Fox')) return 0.05;
+              return 0.2; // Default scale
+            };
+            
+            const scale = getAppropriateScale();
+            model.scale.set(scale, scale, scale);
+            
+            // Center model
+            const box = new THREE.Box3().setFromObject(model);
+            const center = box.getCenter(new THREE.Vector3());
+            center.y = 0; // Only center horizontally, keep vertical position
+            model.position.sub(center);
+            
+            // Add model to scene
+            scene.add(model);
+            modelRef.current = model;
+            
+            // Set visibility based on current mode
+            if (!isXRSupported) {
+              // For non-AR fallback view
+              model.position.set(0, 0, -2);
+              model.visible = true;
+            } else if (sessionRef.current) {
+              // If already in AR session, hide the model until placed
+              model.visible = false;
+            } else {
+              // If not in AR yet, show it in the preview
+              model.position.set(0, 0, -2);
+              model.visible = true;
+            }
+            
+            setModelLoaded(true);
+            setModelLoadProgress(100);
+            console.log('Model loaded and added to scene successfully');
+          },
+          (progress) => {
+            if (progress.lengthComputable) {
+              const progressPercent = Math.round((progress.loaded / progress.total) * 100);
+              setModelLoadProgress(progressPercent);
+              console.log(`Loading model: ${progressPercent}%`);
+            }
+          },
+          (error) => {
+            clearTimeout(timeoutId);
+            console.error('Error loading model:', error);
+            setModelLoadError(`Failed to load 3D model: ${error instanceof Error ? error.message : String(error)}`);
+            if (url !== fallbackModels.default) {
+              console.log('Attempting to load fallback model...');
+              loadModel(fallbackModels.default);
+            }
+          }
+        );
+      } catch (error) {
         clearTimeout(timeoutId);
-        setModelLoadError(`Failed to load resource: ${url}`);
+        console.error('Error initializing model load:', error);
+        setModelLoadError(`Error initializing model load: ${error instanceof Error ? error.message : String(error)}`);
         if (url !== fallbackModels.default) {
           loadModel(fallbackModels.default);
         }
-      };
-      
-      loader.setPath(url.substring(0, url.lastIndexOf('/') + 1));
-      loader.manager = manager;
-      
-      loader.load(
-        url.split('/').pop() || url, // Get filename only if path was set
-        (gltf) => {
-          clearTimeout(timeoutId);
-          console.log('GLTF loaded successfully:', gltf);
-          const model = gltf.scene;
-          
-          // Scale based on model type
-          const getAppropriateScale = () => {
-            if (url.includes('Dragon')) return 0.05;
-            if (url.includes('Lantern')) return 0.5;
-            if (url.includes('Duck')) return 0.2;
-            if (url.includes('Truck')) return 0.2;
-            if (url.includes('Soldier')) return 0.1;
-            if (url.includes('Fox')) return 0.05;
-            return 0.2; // Default scale
-          };
-          
-          const scale = getAppropriateScale();
-          model.scale.set(scale, scale, scale);
-          
-          // Center model
-          const box = new THREE.Box3().setFromObject(model);
-          const center = box.getCenter(new THREE.Vector3());
-          model.position.sub(center); // Center the model at origin
-          
-          // Enhance materials
-          model.traverse((child) => {
-            if ((child as THREE.Mesh).isMesh) {
-              const mesh = child as THREE.Mesh;
-              
-              // Add shadows
-              mesh.castShadow = true;
-              mesh.receiveShadow = true;
-              
-              if (mesh.material) {
-                // Enhanced material settings
-                if (Array.isArray(mesh.material)) {
-                  mesh.material.forEach(mat => {
-                    if (mat instanceof THREE.MeshStandardMaterial) {
-                      mat.roughness = 0.7;
-                      mat.metalness = 0.3;
-                      mat.envMapIntensity = 1.0;
-                    }
-                    if (mat.transparent) {
-                      mat.opacity = 1.0;
-                      mat.transparent = true;
-                    }
-                  });
-                } else {
-                  if (mesh.material instanceof THREE.MeshStandardMaterial) {
-                    mesh.material.roughness = 0.7;
-                    mesh.material.metalness = 0.3;
-                    mesh.material.envMapIntensity = 1.0;
-                  }
-                  if (mesh.material.transparent) {
-                    mesh.material.opacity = 1.0;
-                    mesh.material.transparent = true;
-                  }
-                }
-              }
-            }
-          });
-          
-          // For non-AR fallback view
-          if (!isXRSupported) {
-            model.position.set(0, 0, -2);
-            model.visible = true;
-          } else {
-            model.visible = false;
-          }
-          
-          scene.add(model);
-          modelRef.current = model;
-          setModelLoaded(true);
-          setModelLoadProgress(100);
-          console.log('Model loaded and added to scene successfully');
-        },
-        (progress) => {
-          if (progress.lengthComputable) {
-            const progressPercent = Math.round((progress.loaded / progress.total) * 100);
-            setModelLoadProgress(progressPercent);
-            console.log(`Loading model: ${progressPercent}%`);
-          }
-        },
-        (error) => {
-          clearTimeout(timeoutId);
-          console.error('Error loading model:', error);
-          setModelLoadError(`Failed to load 3D model: ${error instanceof Error ? error.message : String(error)}`);
-          if (url !== fallbackModels.default) {
-            console.log('Attempting to load fallback model...');
-            loadModel(fallbackModels.default);
-          }
-        }
-      );
+      }
     };
 
     if (modelUrl) {
@@ -353,6 +322,7 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
     // Handle placement of model
     function onSelect() {
       if (reticleRef.current?.visible && modelRef.current) {
+        console.log('Placing model at reticle position');
         // Create a clone of the model
         const model = modelRef.current.clone();
         
@@ -362,41 +332,12 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
         // Make sure it's visible
         model.visible = true;
         
-        // Add a small visual feedback animation when placing
-        const originalScale = model.scale.clone();
-        model.scale.multiplyScalar(1.2); // Slightly larger
-        
-        // Animate back to normal size
-        const duration = 300; // ms
-        const startTime = performance.now();
-        
-        function animateScale(time: number) {
-          const elapsed = time - startTime;
-          if (elapsed < duration) {
-            const progress = elapsed / duration;
-            const scale = 1.2 - (0.2 * progress);
-            model.scale.copy(originalScale).multiplyScalar(scale);
-            requestAnimationFrame(animateScale);
-          } else {
-            model.scale.copy(originalScale);
-          }
-        }
-        
-        requestAnimationFrame(animateScale);
-        
         // Add to scene
         scene.add(model);
         setPlacedObjects(prev => [...prev, model]);
-        
-        // Optional: Add a simple animation to the placed model
-        const angle = Math.random() * Math.PI * 2; // Random rotation
-        const animate = () => {
-          model.rotation.y += 0.005;
-          requestAnimationFrame(animate);
-        };
-        
-        // Uncomment to add rotation animation
-        // animate();
+        console.log('Model placed successfully');
+      } else {
+        console.log('Cannot place model - reticle not visible or model not loaded');
       }
     }
 
@@ -412,31 +353,52 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
 
         if (referenceSpace && session) {
           if (hitTestSourceRequiredRef.current) {
-            // Create a separate variable to satisfy TypeScript
+            console.log('Requesting hit test source...');
             const xrSession: XRSession = session;
-            xrSession.requestReferenceSpace('viewer').then((viewerSpace) => {
-              // Use non-null assertion to tell TypeScript the method exists
-              xrSession.requestHitTestSource!({ space: viewerSpace })
-                .then((source) => {
+            
+            xrSession.requestReferenceSpace('viewer')
+              .then((viewerSpace) => {
+                console.log('Viewer space acquired');
+                if (xrSession.requestHitTestSource) {
+                  return xrSession.requestHitTestSource({ space: viewerSpace });
+                } else {
+                  console.error('Hit test source not available');
+                  return null;
+                }
+              })
+              .then((source) => {
+                if (source) {
+                  console.log('Hit test source created');
                   hitTestSourceRef.current = source;
-                })
-                .catch(err => {
-                  console.error("Error requesting hit test source:", err);
-                });
-            });
+                }
+              })
+              .catch(err => {
+                console.error("Error setting up hit test:", err);
+              });
+              
             hitTestSourceRequiredRef.current = false;
           }
 
           if (hitTestSourceRef.current) {
-            const hitTestResults = frame.getHitTestResults(hitTestSourceRef.current);
-            if (hitTestResults.length > 0) {
-              const hit = hitTestResults[0];
-              const pose = hit.getPose(referenceSpace);
+            try {
+              const hitTestResults = frame.getHitTestResults(hitTestSourceRef.current);
+              
+              if (hitTestResults.length > 0) {
+                const hit = hitTestResults[0];
+                const pose = hit.getPose(referenceSpace);
 
-              if (pose && reticleRef.current) {
-                reticleRef.current.visible = true;
-                reticleRef.current.matrix.fromArray(pose.transform.matrix);
+                if (pose && reticleRef.current) {
+                  reticleRef.current.visible = true;
+                  reticleRef.current.matrix.fromArray(pose.transform.matrix);
+                }
+              } else {
+                // No hit test results - hide reticle
+                if (reticleRef.current) {
+                  reticleRef.current.visible = false;
+                }
               }
+            } catch (error) {
+              console.error('Error in hit test:', error);
             }
           }
         }
@@ -466,6 +428,7 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
       window.removeEventListener('resize', handleResize);
       
       if (rendererRef.current) {
+        console.log('Cleaning up renderer');
         rendererRef.current.setAnimationLoop(null);
         if (containerRef.current) {
           try {
@@ -479,8 +442,10 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
         }
       }
 
+      // Remove AR button
       const arButton = document.querySelector('button');
       if (arButton && arButton.parentNode) {
+        console.log('Removing AR button');
         try {
           arButton.remove();
         } catch (error) {
@@ -488,13 +453,25 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
         }
       }
 
+      // Clean up hit test source
       if (hitTestSourceRef.current) {
+        console.log('Cancelling hit test source');
         try {
           hitTestSourceRef.current.cancel();
         } catch (error) {
           console.error("Error cancelling hit test source:", error);
         }
         hitTestSourceRef.current = null;
+      }
+      
+      // End any active XR session
+      if (sessionRef.current) {
+        console.log('Ending XR session');
+        try {
+          sessionRef.current.end();
+        } catch (error) {
+          console.error("Error ending XR session:", error);
+        }
       }
       
       // Reset fullscreen state when component unmounts
@@ -504,26 +481,23 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
     };
   }, [modelUrl, isXRSupported, onArSessionChange, isFullscreen]);
 
+  function getProgressBarWidthClass(progress: number): string {
+    const roundedProgress = Math.floor(progress / 10) * 10;
+    return styles[`w${roundedProgress}`];
+  }
+
   // Simplified fullscreen AR view
   if (isFullscreen) {
     return (
-      <div className="fixed inset-0" style={{ background: 'transparent', zIndex: 9999 }}>
+      <div className={styles.fullscreenContainer}>
         <div 
           ref={containerRef} 
-          className="w-full h-full"
-          style={{ 
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'transparent'
-          }} 
+          className={styles.container}
         />
         
         {!modelLoaded && (
-          <div className="fixed bottom-24 left-0 right-0 mx-auto max-w-[200px] p-2 bg-black/50 rounded-full text-center">
-            <span className="text-sm text-white">Loading {modelLoadProgress}%</span>
+          <div className={styles.loadingIndicator}>
+            <span className={styles.loadingText}>Loading {modelLoadProgress}%</span>
           </div>
         )}
       </div>
@@ -533,26 +507,25 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
   if (isXRSupported === false) {
     return (
       <div className="w-full">
-        <div ref={containerRef} className="w-full h-64 bg-slate-100 rounded-md relative" />
+        <div ref={containerRef} className={styles.fallbackContainer} />
         {modelLoadError ? (
-          <div className="mt-2 p-3 bg-black/70 text-white rounded-md text-sm">
+          <div className={styles.fallbackMessage}>
             {modelLoadError}
           </div>
         ) : !modelLoaded ? (
-          <div className="mt-2 p-3 bg-black/70 text-white rounded-md">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm">Loading Model...</span>
-              <span className="text-xs opacity-80">{modelLoadProgress}%</span>
+          <div className={styles.fallbackMessage}>
+            <div className={styles.progressText}>
+              <span className={styles.progressLabel}>Loading Model...</span>
+              <span className={styles.progressPercent}>{modelLoadProgress}%</span>
             </div>
-            <div className="w-full bg-white/20 rounded-full h-1">
+            <div className={styles.progressBar}>
               <div 
-                className="bg-white rounded-full h-1 transition-all duration-300"
-                style={{ width: `${modelLoadProgress}%` }}
+                className={`${styles.progressFill} ${getProgressBarWidthClass(modelLoadProgress)}`}
               ></div>
             </div>
           </div>
         ) : (
-          <div className="mt-2 p-3 bg-black/70 text-white rounded-md text-sm">
+          <div className={styles.fallbackMessage}>
             <p>WebXR not supported on this device/browser. Showing fallback view.</p>
           </div>
         )}
@@ -562,22 +535,21 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
 
   return (
     <div className="relative w-full h-64">
-      <div ref={containerRef} className="w-full h-full" />
+      <div ref={containerRef} className={styles.arPreviewContainer} />
       
       {modelLoadError ? (
-        <div className="absolute bottom-4 left-4 right-4 mx-auto max-w-md p-2 bg-black/70 rounded-lg text-white text-sm">
+        <div className={styles.errorMessage}>
           {modelLoadError}
         </div>
       ) : !modelLoaded ? (
-        <div className="absolute bottom-4 left-4 right-4 mx-auto max-w-md p-2 bg-black/70 rounded-lg">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-white">Loading Model...</span>
-            <span className="text-xs text-white/80">{modelLoadProgress}%</span>
+        <div className={styles.progressContainer}>
+          <div className={styles.progressText}>
+            <span className={styles.progressLabel}>Loading Model...</span>
+            <span className={styles.progressPercent}>{modelLoadProgress}%</span>
           </div>
-          <div className="w-full bg-white/20 rounded-full h-1">
+          <div className={styles.progressBar}>
             <div 
-              className="bg-white rounded-full h-1 transition-all duration-300"
-              style={{ width: `${modelLoadProgress}%` }}
+              className={`${styles.progressFill} ${getProgressBarWidthClass(modelLoadProgress)}`}
             ></div>
           </div>
         </div>
