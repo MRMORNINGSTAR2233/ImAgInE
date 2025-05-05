@@ -75,6 +75,5 @@ A web-based augmented reality application that uses AI to generate 3D models bas
 - `/public` - Static assets and generated models
 - `server.js` - Express backend for AI model generation
 
-## License
-
-MIT
+###Disclaimer
+Currently the project is on hold due minor problems but open for continuations and contributions.
