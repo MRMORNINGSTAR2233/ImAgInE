@@ -5,12 +5,17 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { ARButton } from 'three/examples/jsm/webxr/ARButton.js';
 import styles from './ARScene.module.css';
 
-// Fallback models if loading fails
+// Update fallback models with more diverse options
 const fallbackModels = {
   'cube': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF/Box.gltf',
-  'duck': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF/Duck.gltf',
+  'fish': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF/Duck.gltf', // Using duck as temporary fish
+  'dragon': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Dragon/glTF/Dragon.gltf',
   'robot': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/BrainStem/glTF/BrainStem.gltf',
   'lantern': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Lantern/glTF/Lantern.gltf',
+  'animal': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Fox/glTF/Fox.gltf',
+  'human': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Soldier/glTF/Soldier.gltf',
+  'vehicle': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMilkTruck/glTF/CesiumMilkTruck.gltf',
+  'default': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF/Box.gltf'
 };
 
 interface ARSceneProps {
@@ -123,12 +128,41 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
           optionalFeatures: ['dom-overlay'],
           domOverlay: { root: document.body },
         });
+        
         // Style the AR button
-        arButton.style.position = 'absolute';
+        arButton.style.position = 'fixed';
         arButton.style.bottom = '20px';
         arButton.style.left = '50%';
         arButton.style.transform = 'translateX(-50%)';
         arButton.style.zIndex = '1000';
+        arButton.style.padding = '12px 24px';
+        arButton.style.borderRadius = '8px';
+        arButton.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        arButton.style.color = 'white';
+        arButton.style.border = 'none';
+        arButton.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+        arButton.style.fontSize = '14px';
+        arButton.style.cursor = 'pointer';
+        arButton.style.transition = 'background-color 0.3s ease';
+
+        // Change button text
+        const updateButtonText = () => {
+          if (arButton.textContent?.includes('Start')) {
+            arButton.textContent = 'Start AR';
+          } else if (arButton.textContent?.includes('Stop')) {
+            arButton.textContent = 'Stop AR';
+          }
+        };
+        updateButtonText();
+        
+        // Add hover effect
+        arButton.addEventListener('mouseover', () => {
+          arButton.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        });
+        arButton.addEventListener('mouseout', () => {
+          arButton.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        });
+
         document.body.appendChild(arButton);
       } catch (error) {
         console.error("Error creating AR button:", error);
@@ -440,21 +474,33 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
 
   return (
     <div className="relative">
-      <div ref={containerRef} className={`ar-container ${styles.container}`} style={{ position: 'relative', width: '100%', height: '100vh' }} />
+      <div 
+        ref={containerRef} 
+        className={`ar-container ${styles.container}`} 
+        style={{ 
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          zIndex: 0
+        }} 
+      />
       
       {modelLoadError ? (
-        <div className="absolute bottom-4 left-4 right-4 p-4 bg-red-50 border border-red-200 rounded-md text-red-700">
-          <p className="text-sm">{modelLoadError}</p>
+        <div className="fixed bottom-20 left-4 right-4 p-4 bg-black/70 backdrop-blur-sm rounded-lg text-white text-sm">
+          {modelLoadError}
         </div>
       ) : !modelLoaded ? (
-        <div className="absolute bottom-4 left-4 right-4 p-4 bg-white/80 backdrop-blur-sm border border-slate-200 rounded-md">
+        <div className="fixed bottom-20 left-4 right-4 p-4 bg-black/70 backdrop-blur-sm rounded-lg">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-sm font-medium text-slate-700">Loading 3D Model...</span>
-            <span className="text-xs text-slate-500">{modelLoadProgress}%</span>
+            <span className="text-sm text-white">Loading Model...</span>
+            <span className="text-xs text-white/80">{modelLoadProgress}%</span>
           </div>
-          <div className="w-full bg-slate-200 rounded-full h-2">
+          <div className="w-full bg-white/20 rounded-full h-1">
             <div 
-              className={`${styles.progressBar} ${getProgressBarWidthClass(modelLoadProgress)}`}
+              className="bg-white rounded-full h-1 transition-all duration-300"
+              style={{ width: `${modelLoadProgress}%` }}
             ></div>
           </div>
         </div>
