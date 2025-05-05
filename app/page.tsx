@@ -36,7 +36,7 @@ export default function Home() {
     setError(null);
     
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://phoenix-promoted-piranha.ngrok-free.app";
       const response = await fetch(`${apiUrl}/generate`, {
         method: "POST",
         headers: {

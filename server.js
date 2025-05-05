@@ -13,7 +13,7 @@ app.use(express.json());
 app.use('/models', express.static(path.join(__dirname, 'public/models')));
 
 // Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'Gemini_api_key');
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 // Fallback models if AI generation fails
 const fallbackModels = {
