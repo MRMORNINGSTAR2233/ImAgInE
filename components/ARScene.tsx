@@ -19,9 +19,10 @@ const fallbackModels = {
 
 interface ARSceneProps {
   modelUrl: string;
+  onArSessionChange?: (active: boolean) => void;
 }
 
-const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
+const ARScene: React.FC<ARSceneProps> = ({ modelUrl, onArSessionChange }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -36,6 +37,7 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
   const [modelLoadProgress, setModelLoadProgress] = useState(0);
   const [modelLoadError, setModelLoadError] = useState<string | null>(null);
   const [placedObjects, setPlacedObjects] = useState<THREE.Object3D[]>([]);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     // Reset states when model URL changes
@@ -117,47 +119,51 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
     // Add AR button to the container only if WebXR is supported
     if (isXRSupported) {
       try {
-        const arButton = ARButton.createButton(renderer, {
-          requiredFeatures: ['hit-test'],
-          optionalFeatures: ['dom-overlay'],
-          domOverlay: { root: document.body },
-        });
-        
-        // Style the AR button
-        arButton.style.position = 'fixed';
-        arButton.style.bottom = '20px';
-        arButton.style.left = '50%';
-        arButton.style.transform = 'translateX(-50%)';
-        arButton.style.zIndex = '2000';
-        arButton.style.padding = '12px 24px';
-        arButton.style.borderRadius = '8px';
-        arButton.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        arButton.style.color = 'white';
-        arButton.style.border = 'none';
-        arButton.style.fontFamily = 'system-ui, -apple-system, sans-serif';
-        arButton.style.fontSize = '14px';
-        arButton.style.cursor = 'pointer';
-        arButton.style.transition = 'background-color 0.3s ease';
-
-        // Change button text
-        const updateButtonText = () => {
-          if (arButton.textContent?.includes('Start')) {
-            arButton.textContent = 'Start AR';
-          } else if (arButton.textContent?.includes('Stop')) {
-            arButton.textContent = 'Stop AR';
+        // Create custom AR button handler
+        const handleARButtonClick = () => {
+          if (sessionRef.current) {
+            // Stop the session
+            sessionRef.current.end();
+          } else {
+            // Start a new session
+            renderer.xr.setReferenceSpaceType('local');
+            renderer.xr.setSession(null);
+            
+            navigator.xr?.requestSession('immersive-ar', {
+              requiredFeatures: ['hit-test'],
+              optionalFeatures: ['dom-overlay'],
+              domOverlay: { root: document.body }
+            }).then((session) => {
+              renderer.xr.setSession(session);
+              if (onArSessionChange) {
+                onArSessionChange(true);
+                setIsFullscreen(true);
+              }
+            }).catch(error => {
+              console.error('Error starting AR session:', error);
+            });
           }
         };
-        updateButtonText();
-        
-        // Add hover effect
-        arButton.addEventListener('mouseover', () => {
-          arButton.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-        });
-        arButton.addEventListener('mouseout', () => {
-          arButton.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        });
 
-        document.body.appendChild(arButton);
+        // Create a custom button instead of using ARButton.createButton
+        const customARButton = document.createElement('button');
+        customARButton.textContent = 'Start AR';
+        customARButton.style.position = 'fixed';
+        customARButton.style.bottom = '20px';
+        customARButton.style.left = '50%';
+        customARButton.style.transform = 'translateX(-50%)';
+        customARButton.style.zIndex = '2000';
+        customARButton.style.padding = '12px 24px';
+        customARButton.style.borderRadius = '8px';
+        customARButton.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        customARButton.style.color = 'white';
+        customARButton.style.border = 'none';
+        customARButton.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+        customARButton.style.fontSize = '14px';
+        customARButton.style.cursor = 'pointer';
+        
+        customARButton.addEventListener('click', handleARButtonClick);
+        document.body.appendChild(customARButton);
       } catch (error) {
         console.error("Error creating AR button:", error);
         setIsXRSupported(false);
@@ -169,6 +175,10 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
       sessionRef.current = renderer.xr.getSession();
       hitTestSourceRequiredRef.current = true;
       console.log("AR session started");
+      if (onArSessionChange) {
+        onArSessionChange(true);
+        setIsFullscreen(true);
+      }
     });
 
     renderer.xr.addEventListener('sessionend', () => {
@@ -176,6 +186,10 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
       sessionRef.current = null;
       hitTestSourceRef.current = null;
       hitTestSourceRequiredRef.current = false;
+      if (onArSessionChange) {
+        onArSessionChange(false);
+        setIsFullscreen(false);
+      }
     });
 
     // Handle controller for selecting placement
@@ -297,35 +311,6 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
         model.visible = true;
         scene.add(model);
         setPlacedObjects(prev => [...prev, model]);
-        
-        // Add a small animation to indicate successful placement
-        const origScale = { ...model.scale };
-        model.scale.set(origScale.x * 1.2, origScale.y * 1.2, origScale.z * 1.2);
-        
-        setTimeout(() => {
-          // Animate back to original scale
-          const duration = 300; // ms
-          const startTime = Date.now();
-          
-          function animateScale() {
-            const elapsed = Date.now() - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-            
-            const newScale = {
-              x: origScale.x * (1.2 - (0.2 * progress)),
-              y: origScale.y * (1.2 - (0.2 * progress)),
-              z: origScale.z * (1.2 - (0.2 * progress))
-            };
-            
-            model.scale.set(newScale.x, newScale.y, newScale.z);
-            
-            if (progress < 1) {
-              requestAnimationFrame(animateScale);
-            }
-          }
-          
-          animateScale();
-        }, 100);
       }
     }
 
@@ -408,7 +393,7 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
         }
       }
 
-      const arButton = document.querySelector('button[data-type="ar"]');
+      const arButton = document.querySelector('button');
       if (arButton && arButton.parentNode) {
         try {
           arButton.remove();
@@ -425,42 +410,64 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
         }
         hitTestSourceRef.current = null;
       }
+      
+      // Reset fullscreen state when component unmounts
+      if (onArSessionChange && isFullscreen) {
+        onArSessionChange(false);
+      }
     };
-  }, [modelUrl, isXRSupported]);
+  }, [modelUrl, isXRSupported, onArSessionChange, isFullscreen]);
+
+  // Simplified fullscreen AR view
+  if (isFullscreen) {
+    return (
+      <div className="fixed inset-0" style={{ background: 'transparent', zIndex: 9999 }}>
+        <div 
+          ref={containerRef} 
+          className="w-full h-full"
+          style={{ 
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'transparent'
+          }} 
+        />
+        
+        {!modelLoaded && (
+          <div className="fixed bottom-24 left-0 right-0 mx-auto max-w-[200px] p-2 bg-black/50 rounded-full text-center">
+            <span className="text-sm text-white">Loading {modelLoadProgress}%</span>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (isXRSupported === false) {
     return (
       <div className="w-full">
-        <div ref={containerRef} className="ar-container w-full h-64 bg-slate-100 rounded-md relative" />
+        <div ref={containerRef} className="w-full h-64 bg-slate-100 rounded-md relative" />
         {modelLoadError ? (
-          <div className="mt-2 p-4 bg-red-50 border border-red-200 rounded-md text-red-700">
-            <h3 className="font-medium">Error Loading Model</h3>
-            <p className="text-sm mt-1">{modelLoadError}</p>
+          <div className="mt-2 p-3 bg-black/70 text-white rounded-md text-sm">
+            {modelLoadError}
           </div>
         ) : !modelLoaded ? (
-          <div className="mt-2 p-4 bg-blue-50 border border-blue-200 rounded-md">
+          <div className="mt-2 p-3 bg-black/70 text-white rounded-md">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-sm font-medium text-blue-700">Loading 3D Model...</span>
-              <span className="text-xs text-blue-500">{modelLoadProgress}%</span>
+              <span className="text-sm">Loading Model...</span>
+              <span className="text-xs opacity-80">{modelLoadProgress}%</span>
             </div>
-            <div className="w-full bg-blue-200 rounded-full h-2">
+            <div className="w-full bg-white/20 rounded-full h-1">
               <div 
-                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                className="bg-white rounded-full h-1 transition-all duration-300"
                 style={{ width: `${modelLoadProgress}%` }}
               ></div>
             </div>
           </div>
         ) : (
-          <div className="mt-2 p-4 bg-amber-50 border border-amber-200 rounded-md text-amber-700">
-            <h3 className="font-medium">WebXR Not Supported</h3>
-            <p className="text-sm mt-1">
-              Your device or browser doesn't support AR. Showing a non-AR 3D preview instead.
-            </p>
-            <ul className="text-sm list-disc pl-5 mt-1">
-              <li>Use an Android device with Chrome browser</li>
-              <li>Access this site over HTTPS or localhost</li>
-              <li>Ensure WebXR is enabled in your browser</li>
-            </ul>
+          <div className="mt-2 p-3 bg-black/70 text-white rounded-md text-sm">
+            <p>WebXR not supported on this device/browser. Showing fallback view.</p>
           </div>
         )}
       </div>
@@ -468,26 +475,15 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
   }
 
   return (
-    <div className="fixed inset-0" style={{ background: 'transparent' }}>
-      <div 
-        ref={containerRef} 
-        className="w-full h-full"
-        style={{ 
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'transparent'
-        }} 
-      />
+    <div className="relative w-full h-64">
+      <div ref={containerRef} className="w-full h-full" />
       
       {modelLoadError ? (
-        <div className="fixed bottom-24 left-4 right-4 mx-auto max-w-md p-3 bg-black/70 backdrop-blur-sm rounded-lg text-white text-sm">
+        <div className="absolute bottom-4 left-4 right-4 mx-auto max-w-md p-2 bg-black/70 rounded-lg text-white text-sm">
           {modelLoadError}
         </div>
       ) : !modelLoaded ? (
-        <div className="fixed bottom-24 left-4 right-4 mx-auto max-w-md p-3 bg-black/70 backdrop-blur-sm rounded-lg">
+        <div className="absolute bottom-4 left-4 right-4 mx-auto max-w-md p-2 bg-black/70 rounded-lg">
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm text-white">Loading Model...</span>
             <span className="text-xs text-white/80">{modelLoadProgress}%</span>
@@ -499,26 +495,9 @@ const ARScene: React.FC<ARSceneProps> = ({ modelUrl }) => {
             ></div>
           </div>
         </div>
-      ) : placedObjects.length > 0 ? (
-        <div className="absolute top-4 right-4 p-2 bg-white/70 backdrop-blur-sm rounded-md text-xs text-slate-700">
-          {placedObjects.length} {placedObjects.length === 1 ? 'model' : 'models'} placed
-        </div>
       ) : null}
     </div>
   );
 };
-
-// Add some CSS to ensure proper rendering
-const styles = {
-  container: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
-    background: 'transparent',
-    zIndex: 1
-  }
-} as const;
 
 export default dynamic(() => Promise.resolve(ARScene), { ssr: false }); 

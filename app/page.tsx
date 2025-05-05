@@ -21,6 +21,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [aiGenerated, setAiGenerated] = useState(false);
   const [modelType, setModelType] = useState<string | null>(null);
+  const [arActive, setArActive] = useState(false);
 
   const handlePromptChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setPrompt(e.target.value);
@@ -34,7 +35,7 @@ export default function Home() {
 
     setLoading(true);
     setError(null);
-    setModelUrl(null); // Reset model URL when generating new model
+    setModelUrl(null);
     
     try {
       console.log('Sending request to generate model...');
@@ -71,6 +72,11 @@ export default function Home() {
     }
   };
 
+  // New function to handle AR session state
+  const handleArSessionState = (active: boolean) => {
+    setArActive(active);
+  };
+
   const renderModelInfo = () => {
     if (!modelUrl || !modelDescription) return null;
 
@@ -96,6 +102,11 @@ export default function Home() {
       </Card>
     );
   };
+
+  // If AR is active, show only the AR scene
+  if (arActive && modelUrl) {
+    return <ARScene modelUrl={modelUrl} onArSessionChange={handleArSessionState} />;
+  }
 
   return (
     <Layout>
@@ -151,7 +162,7 @@ export default function Home() {
               </CardHeader>
               <CardContent className="p-0">
                 <div className="ar-container relative">
-                  <ARScene modelUrl={modelUrl} />
+                  <ARScene modelUrl={modelUrl} onArSessionChange={handleArSessionState} />
                 </div>
               </CardContent>
             </Card>
