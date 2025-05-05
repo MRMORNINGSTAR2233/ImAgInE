@@ -1,16 +1,5 @@
-// Sample backend server for local testing
-const express = require('express');
-const cors = require('cors');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const fs = require('fs');
-const path = require('path');
-const app = express();
-const port = 8000;
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use('/models', express.static(path.join(__dirname, 'public/models')));
+import { NextResponse } from 'next/server';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -23,14 +12,8 @@ const fallbackModels = {
   'lantern': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Lantern/glTF/Lantern.gltf',
 };
 
-// Ensure models directory exists
-const modelsDir = path.join(__dirname, 'public/models');
-if (!fs.existsSync(modelsDir)) {
-  fs.mkdirSync(modelsDir, { recursive: true });
-}
-
 // Generate 3D model using Gemini AI
-async function generateModelWithAI(prompt) {
+async function generateModelWithAI(prompt: string) {
   try {
     // Use Gemini 1.5 Flash model instead of gemini-pro
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
@@ -61,7 +44,7 @@ async function generateModelWithAI(prompt) {
     }
     
     return {
-      modelUrl: fallbackModels[modelType] || fallbackModels.cube,
+      modelUrl: fallbackModels[modelType as keyof typeof fallbackModels] || fallbackModels.cube,
       modelDescription: modelDescription,
       aiGenerated: true,
       modelType
@@ -78,19 +61,21 @@ async function generateModelWithAI(prompt) {
   }
 }
 
-// Endpoint to generate 3D model based on prompt
-app.post('/generate', async (req, res) => {
-  const { prompt } = req.body;
-  
-  if (!prompt) {
-    return res.status(400).json({ error: 'Prompt is required' });
-  }
-  
+export async function POST(request: Request) {
   try {
+    const { prompt } = await request.json();
+    
+    if (!prompt) {
+      return NextResponse.json(
+        { error: 'Prompt is required' },
+        { status: 400 }
+      );
+    }
+    
     console.log(`Generating 3D model for prompt: "${prompt}"`);
     const modelData = await generateModelWithAI(prompt);
     
-    res.json({ 
+    return NextResponse.json({ 
       url: modelData.modelUrl,
       description: modelData.modelDescription,
       aiGenerated: modelData.aiGenerated,
@@ -98,14 +83,12 @@ app.post('/generate', async (req, res) => {
     });
   } catch (error) {
     console.error('Error processing model generation:', error);
-    res.status(500).json({ 
-      error: 'Failed to generate model',
-      url: fallbackModels.cube
-    });
+    return NextResponse.json(
+      { 
+        error: 'Failed to generate model',
+        url: fallbackModels.cube
+      },
+      { status: 500 }
+    );
   }
-});
-
-app.listen(port, () => {
-  console.log(`AR API server running at http://localhost:${port}`);
-  console.log('Waiting for user prompts to generate AR models...');
-}); 
+} 
